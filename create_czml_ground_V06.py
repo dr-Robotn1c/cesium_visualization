@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-#Version 0.6 -> provided by rop 07.05.2019
+#Version 0.6 -> provided by rop 08.05.2019
 
 from sgp4.earth_gravity import wgs84
 from sgp4.io import twoline2rv
@@ -58,12 +58,12 @@ colour_list = [yellow, green, orange, red, purple, blue, pink, turquoise, grey, 
 '''
 paths
 '''
-czml_template = ':-)'
-output_czml_path = ':-)'
-TLE_source_path = ':-)'
-#input_xls = ':-)'
-input_xls = ':-)'
-input_xls_template = ':-)'
+czml_template = 'D:\\working\\ROP_legacy\\GSN\\template_Ground.czml'
+output_czml_path = 'D:\\cesium\\Apps\\SampleData'
+TLE_source_path = 'D:\\cesium\\TLE_source'
+#input_xls = 'C:\\GSN_list\\121115 ground_stations_list_updated.xls'
+input_xls = 'C:\\GSN_list\\121115 ground_stations_list_1.xls'
+input_xls_template = 'C:\\GSN_list'
 
 '''
 geographic coordinates to cartesian WGS84
@@ -363,22 +363,31 @@ get next 3 passes over station xyz
 
 def next_3_passes(files, curr_day, curr_month, curr_year, curr_hour, curr_minute, curr_second, curr_microsecond, station_name, lat, lon, height):
     AOS_time_list = list()
+    MAX_elev_list = list()
     LOS_time_list = list()
     with open(os.path.join(TLE_source_path, files), 'r') as f:
         data = f.readlines()
     tle = Tle(data)
     station = create_station(station_name, (lat, lon, height))
+    azims, elevs = [],[]    #sadf
     from datetime import datetime
     starttime = Date(datetime(int(curr_year), int(curr_month), int(curr_day), int(curr_hour), int(curr_second)))
     q = 0
+    #print("    Time      Azim    Elev    Distance   Radial Velocity")
+    #print("=========================================================")
     for orb in station.visibility(tle.orbit(), start= starttime, stop=timedelta(days=1), step=timedelta(minutes=2), events=True):
-        azim = -np.degrees(orb.theta) % 360
+        #azim = -np.degrees(orb.theta) % 360
         elev = np.degrees(orb.phi)
+        #elevs.append(90 - elev) #asdf
         r = orb.r / 1000.
+        #print("{event:7} {orb.date:%H:%M:%S} {azim:7.2f} {elev:7.2f} {r:10.2f} {orb.r_dot:10.2f}".format(orb=orb, r=r, azim=azim, elev=elev, event=orb.event.info if orb.event is not None else ""))
         if orb.event and orb.event.info == "AOS":
             AOS_time = str(orb.date)[:-4] + 'Z'
             AOS_time_list.append(AOS_time)
             q = q + 1
+        if orb.event and orb.event.info == "MAX":
+            MAX_elev = str(round(elev, 4))
+            MAX_elev_list.append(MAX_elev)
         if orb.event and orb.event.info == "LOS":
             LOS_time = str(orb.date)[:-4] + 'Z'
             LOS_time_list.append(LOS_time)
@@ -392,7 +401,7 @@ def next_3_passes(files, curr_day, curr_month, curr_year, curr_hour, curr_minute
             if not len(AOS_time_list) > len(LOS_time_list):
                 more_AOS = False
     print(len(AOS_time_list), ' access events calculated')
-    return AOS_time_list, LOS_time_list, q
+    return AOS_time_list, MAX_elev_list, LOS_time_list, q
 
 '''
 get stations from GSN list
@@ -422,15 +431,43 @@ def get_station():
     return GSN_dict
 
 '''
+emulate station from input
+'''
+def emulate_station(GS_text, lat, lon, height):
+    GSN_dict = dict()
+    placemark_dict = dict()
+    id = 1
+    if lat == None:
+        lat = 0.0
+    if lon == None:
+        lon = 0.0
+    if height == None:
+        height = 0.0
+    if isinstance(lat, str):
+        lat = float(lat)
+    if isinstance(lon, str):
+        lon = float(lon)
+    if isinstance(height, str):
+        height = float(height)
+    diameter = 'not specified'
+    Band = 'not specified'
+    Uplink = 'not specified'
+    Downlink = 'not specified'
+    location = 'not specified'
+    placemark_dict.update({'GS_text':GS_text, 'lat': lat, 'lon': lon, 'height': height, 'location': location, 'diameter': diameter, 'Band': Band, 'Uplink': Uplink, 'Downlink': Downlink})
+    GSN_dict.update({id:placemark_dict})
+    return GSN_dict
+
+'''
 get duration in seconds
 '''
 def get_duration(starttime, endtime):
     try:
-        duration = (endtime - starttime).total_seconds()
+        duration = str(round((endtime - starttime).total_seconds(), 4))
     except:
         start = datetime.datetime.strptime(starttime, '%Y-%m-%dT%H:%M:%S.%fZ')
         end = datetime.datetime.strptime(endtime, '%Y-%m-%dT%H:%M:%S.%fZ')
-        duration = str((end - start).total_seconds()) + 'Z'
+        duration = str(round((end - start).total_seconds(), 4)) + 'Z'
     return duration
 
 '''
@@ -442,6 +479,7 @@ print('\n')
 '''
 argument processing
 '''
+define_station = False
 TLE_list_tmp = list()
 TLE_list = os.listdir(TLE_source_path)
 if len(sys.argv) > 1:                                                                       # if there is any argument, considered TLEs and/ or GSN input list will be adjusted
@@ -456,6 +494,8 @@ if len(sys.argv) > 1:                                                           
         input_xls = os.path.join(input_xls_template, GSN_file)                              # GSN input list adjustment
     if '-op' in argument_list:                                                              # argument to consider operational GSOC satellites' TLEs for TLE list
         TLE_list = operational_list
+    if '-def_station' in argument_list:
+        define_station = True
 
 TLE_list_tmp = list()                                                                       # check if all TLE files are in source and readable files
 for files in TLE_list:
@@ -479,7 +519,14 @@ starttime_list.sort(reverse = True)
 satellite_epoch = starttime_list[0]
 curr_time_czml, curr_day, curr_month, curr_year, curr_hour, curr_minute, curr_second, curr_microsecond = get_latest_starttime(satellite_epoch)
 
-GSN_dict = get_station()                                                                    # get dict of GSN
+if not define_station:
+    GSN_dict = get_station()                                                                # get dict of GSN from input xlsx
+if define_station:
+    GS_text = input("Please enter name for station: ")
+    lat = input("Please enter latitude in decimal degrees: ")
+    lon = input("Please enter lon in decimal degrees: ")
+    height = input("Please enter height in metres: ")
+    GSN_dict = emulate_station(GS_text, lat, lon, height)
 for files in TLE_list:                                                                      # read TLEs
     satellite_name, line1_raw, line2_raw = read_TLE()
     print('TLE for', satellite_name, 'found in source')
@@ -541,7 +588,7 @@ for files in TLE_list:                                                          
     replace_txt(output_czml, '$colour$', new_colour)                                        # write trajectory colouring to output czml
 
     for key, value in GSN_dict.items():                                                     # write station and calculated station satellite access events to output czml
-        AOS_time_list, LOS_time_list, q = next_3_passes(files, curr_day, curr_month, curr_year, curr_hour, curr_minute, curr_second, curr_microsecond, value['GS_text'], value['lat'], value['lon'], value['height'])   # calculate access events
+        AOS_time_list, MAX_elev_list, LOS_time_list, q = next_3_passes(files, curr_day, curr_month, curr_year, curr_hour, curr_minute, curr_second, curr_microsecond, value['GS_text'], value['lat'], value['lon'], value['height'])   # calculate access events
         if len(AOS_time_list) < 1:                                                          # if no access event exists between current station and current satellite, the loop is skipped
             continue
         index_uuid = lookup_index(output_czml, '$uuid$')                                    # get access event unique identifier
@@ -549,7 +596,7 @@ for files in TLE_list:                                                          
         uuid_text = '{\n"id":"' + uuid_curr + '",\n"name":"Accesses",\n"description":"List of Accesses"\n},\n'
         x, y, z = geodetic_to_geocentric(WGS84_ellipsoid, value['lat'], value['lon'], value['height'])  # transform geographic station coordinates to cartesian coordinates
         antenna_text = ',{\n"id":"Facility/' + value['GS_text'] + '",\n"name":"' + value['GS_text'] + '",\n"availability":"$interval_time$",\n"description":"<!--HTML-->' + r'\r\n<p>\r\n' + value['GS_text'] + r'\n' + value['location'] + r'\ndiameter: ' + str(value['diameter']) + r'\nband: ' + value['Band'] + r'\nUplink Frequency [MHz]: ' + value['Uplink'] + r'\nDownlink Frequency [MHz]: ' + value['Downlink'] + r'\r\n<p>",' + '\n"billboard":{\n"eyeOffset":{\n"cartesian":[0,0,0]\n},\n"horizontalOrigin":"CENTER",\n"image":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAACvSURBVDhPrZDRDcMgDAU9GqN0lIzijw6SUbJJygUeNQgSqepJTyHG91LVVpwDdfxM3T9TSl1EXZvDwii471fivK73cBFFQNTT/d2KoGpfGOpSIkhUpgUMxq9DFEsWv4IXhlyCnhBFnZcFEEuYqbiUlNwWgMTdrZ3JbQFoEVG53rd8ztG9aPJMnBUQf/VFraBJeWnLS0RfjbKyLJA8FkT5seDYS1Qwyv8t0B/5C2ZmH2/eTGNNBgMmAAAAAElFTkSuQmCC",\n"pixelOffset":\n{\n"cartesian2":[0,0]\n},\n"scale":1.5,\n"show":true,\n"verticalOrigin":"CENTER"\n},\n"label":{\n"fillColor":\n{\n"rgba":[0,255,255,255]\n},\n"font":"11pt Lucida Console",\n"horizontalOrigin":"LEFT",\n"outlineColor":\n{\n"rgba":[0,0,0,255]\n},\n"outlineWidth":2,\n"pixelOffset":\n{\n"cartesian2":[12,0]\n},\n"show":true,\n"style":"FILL_AND_OUTLINE",\n"text":"' + value['GS_text'] + '",\n"verticalOrigin":"CENTER"\n},\n"position":\n{\n"cartesian":[' + str(x) + ',' + str(y) + ',' + str(z) + ']\n}\n}\n'
-        access_text = ',{\n"id":"Facility/' + value['GS_text'] + '-to-satellite/' + satellite_name + '",\n"name":"' + value['GS_text'] + ' to ' + satellite_name + '",\n"parent":"' + uuid_curr + '",\n"availability":\n[\n$AOS_LOS_time_av$\n],\n"description":"<h2>Access times</h2><table class=' + "'sky-infoBox-access-table'><tr><th>Start</th><th>End</th><th>Duration</th></tr>$durations$" + '</table>",\n"polyline":\n{\n"show":\n[\n$AOS_LOS_time$\n],\n"width":1,\n"material":\n{\n"solidColor":\n{\n"color":\n{\n"rgba":[0,255,255,255]\n}\n}\n},\n"arcType":"NONE",\n"positions":\n{\n"references":\n[\n"Facility/' + value['GS_text'] + '#position","Satellite/' + satellite_name + '#position"\n]\n}\n}\n}'
+        access_text = ',{\n"id":"Facility/' + value['GS_text'] + '-to-satellite/' + satellite_name + '",\n"name":"' + value['GS_text'] + ' to ' + satellite_name + '",\n"parent":"' + uuid_curr + '",\n"availability":\n[\n$AOS_LOS_time_av$\n],\n"description":"<h2>Access times</h2><table class=' + "'sky-infoBox-access-table'><tr><th>Start</th><th>End</th><th>Max Elev</th><th>Duration</th></tr>$durations$" + '</table>",\n"polyline":\n{\n"show":\n[\n$AOS_LOS_time$\n],\n"width":1,\n"material":\n{\n"solidColor":\n{\n"color":\n{\n"rgba":[0,255,255,255]\n}\n}\n},\n"arcType":"NONE",\n"positions":\n{\n"references":\n[\n"Facility/' + value['GS_text'] + '#position","Satellite/' + satellite_name + '#position"\n]\n}\n}\n}'
         add_line(output_czml, index_uuid, uuid_text)                                        # write access event identifier to output czml
         index_antenna = lookup_index(output_czml, '$antenna$')
         add_line(output_czml, index_antenna, antenna_text)                                  # write station to output czml
@@ -568,10 +615,9 @@ for files in TLE_list:                                                          
             index4 = index4 + 1
             p = p + 1
         duration_text = ''
-        print(Duration_list, 'Duration list')
         x = 0                                                                               # write durations and accesses into access description in output czml
         for x in range(0, len(Duration_list)-1):
-            duration_text = duration_text + '<tr><td>' + AOS_time_list[x] + '</td><td>' + LOS_time_list[x] + '</td><td>' + Duration_list[x] + '</td></tr>'
+            duration_text = duration_text + '<tr><td>' + AOS_time_list[x] + '</td><td>' + LOS_time_list[x] + '</td><td>' + MAX_elev_list[x] + '</td><td>' + Duration_list[x] + '</td></tr>'
             x = x + 1
         replace_txt(output_czml, '$durations$', duration_text)
         index5 = lookup_index(output_czml, '$AOS_LOS_time$')
