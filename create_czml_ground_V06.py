@@ -58,12 +58,12 @@ colour_list = [yellow, green, orange, red, purple, blue, pink, turquoise, grey, 
 '''
 paths
 '''
-czml_template = 'D:\\working\\ROP_legacy\\GSN\\template_Ground.czml'
-output_czml_path = 'D:\\cesium\\Apps\\SampleData'
-TLE_source_path = 'D:\\cesium\\TLE_source'
-#input_xls = 'C:\\GSN_list\\121115 ground_stations_list_updated.xls'
-input_xls = 'C:\\GSN_list\\121115 ground_stations_list_1.xls'
-input_xls_template = 'C:\\GSN_list'
+czml_template = ':-)'
+output_czml_path = ':-)'
+TLE_source_path = ':-)'
+#input_xls = ':-)'
+input_xls = ':-)'
+input_xls_template = ':-)'
 
 '''
 geographic coordinates to cartesian WGS84
